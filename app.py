@@ -2,46 +2,73 @@ import streamlit as st
 import pandas as pd
 import io
 
-# 網頁標題與正向鼓勵
-st.set_page_config(page_title="數據累計助手", page_icon="📊")
-st.title("🚀 自動檔案累計整理助手")
-st.write("把你的檔案丟進來，剩下的交給 AI 處理，你去喝杯咖啡吧！☕️")
+# 設定網頁寬度
+st.set_page_config(page_title="進階數據分析助手", layout="wide")
 
-# 設定欄位名稱
-with st.sidebar:
-    st.header("⚙️ 設定參數")
-    date_col = st.text_input("日期欄位名稱", "日期")
-    value_col = st.text_input("累計數值欄位名稱", "金額")
+st.title("🧮 互動式數據分析工具")
+st.write("上傳檔案後，你可以自由選擇欄位進行加總、平均或排序。")
 
-# 上傳檔案區（支援多檔案）
-uploaded_files = st.file_uploader("請上傳所有要整理的 Excel 或 CSV", type=['xlsx', 'csv'], accept_multiple_files=True)
+# --- 1. 檔案上傳 ---
+uploaded_file = st.file_uploader("上傳 Excel 或 CSV 檔案", type=['xlsx', 'csv'])
 
-if uploaded_files:
-    all_data = []
-    for file in uploaded_files:
-        df = pd.read_excel(file) if file.name.endswith('.xlsx') else pd.read_csv(file)
-        if date_col in df.columns and value_col in df.columns:
-            all_data.append(df[[date_col, value_col]])
+if uploaded_file:
+    # 讀取資料
+    df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
     
-    if all_data:
-        # 合併與計算
-        combined_df = pd.concat(all_data, ignore_index=True)
-        summary = combined_df.groupby(date_col)[value_col].sum().reset_index()
-        
-        # 顯示結果預覽
-        st.subheader("📊 整理結果預覽")
-        st.dataframe(summary)
+    st.subheader("1. 原始資料預覽")
+    # 讓表格可以排序與篩選
+    st.dataframe(df, use_container_width=True)
 
-        # 轉成 Excel 下載連結
+    st.divider()
+
+    # --- 2. 互動式排列設定 ---
+    st.subheader("2. 自定義分析設定")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        group_cols = st.multiselect("選擇要『分類』的欄位 (例如：日期、品項)", options=df.columns.tolist())
+    
+    with col2:
+        calc_cols = st.multiselect("選擇要『計算』的數值欄位 (例如：金額、數量)", options=df.columns.tolist())
+        
+    with col3:
+        method = st.selectbox("選擇計算方式", ["加總 (Sum)", "平均 (Mean)", "計數 (Count)", "最大值 (Max)", "最小值 (Min)"])
+
+    # --- 3. 執行運算 ---
+    if group_cols and calc_cols:
+        # 對應計算方法
+        method_map = {
+            "加總 (Sum)": "sum",
+            "平均 (Mean)": "mean",
+            "計數 (Count)": "count",
+            "最大值 (Max)": "max",
+            "最小值 (Min)": "min"
+        }
+        
+        # 執行 GroupBy 運算
+        result_df = df.groupby(group_cols)[calc_cols].agg(method_map[method]).reset_index()
+        
+        # 排序功能
+        sort_col = st.selectbox("選擇排序欄位", options=result_df.columns.tolist())
+        sort_order = st.radio("排序方向", ["升冪 (小到大)", "降冪 (大到小)"], horizontal=True)
+        
+        result_df = result_df.sort_values(by=sort_col, ascending=(sort_order == "升冪 (小到大)"))
+
+        # --- 4. 顯示結果與下載 ---
+        st.success(f"✅ 已完成分析：按 {', '.join(group_cols)} 進行 {method}")
+        st.dataframe(result_df, use_container_width=True)
+
+        # 下載按鈕
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            summary.to_excel(writer, index=False)
+            result_df.to_excel(writer, index=False)
         
         st.download_button(
-            label="📥 下載累計報表 (Excel)",
+            label="📥 下載此分析結果",
             data=output.getvalue(),
-            file_name="整理完成_累計報表.xlsx",
+            file_name="分析報表.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
-        st.error(f"找不到指定的欄位：'{date_col}' 或 '{value_col}'，請檢查設定！")
+        st.info("💡 請在上方選擇至少一個『分類欄位』與一個『計算欄位』開始分析。")
